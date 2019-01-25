@@ -12,7 +12,8 @@ SSD1306AsciiWire oled;
 const byte minSats = 7;
 const unsigned int maxValidDist = 8000;
 const unsigned int screenUpdateMillis = 1000;
-const unsigned int linkAlert = 3000;
+const unsigned int linkAlert = 8000;
+const boolean serialDebug = false;
 
 /*  config variables: */
 /* 2,3 should be left out for sofserial... when upgraded with home gps unit*/
@@ -44,10 +45,8 @@ const String ggaMsgTAIL = "M,37.7,M,,*";
 */
 // alábbi teszt sorok felvannak fentebb darabolva hogy kevesebb memoria menjen el a stringre késöbb konkatenálom akkor
 // már nem fagy szét....
-//String ggaMsgExample2 = "$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*73";// Matyaster
-//String ggaMsgExample3 = "$GNGGA,130554.80,4614.52873,N,02007.71040,E,1,09,1.61,392.4,M,37.7,M,,*73";
-//String ggaMsgExample3 = "$GNGGA,130554.80,4614.52873,N,02007.71040,E,1,09,2,84,*73";
-//String ggaMsgExample3 = "1234567890";
+//String ggaMsgExample2 = "$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*45";// Matyaster
+//String ggaMsgExample3 = "$GNGGA,130554.80,4614.52873,N,02007.71040,E,1,09,1.61,392.4,M,37.7,M,,*47";
 
 /*  status variables: */
 double HOME_LAT = 46.24505;
@@ -152,13 +151,18 @@ void setup() {
   // ezt a hívást kikellett szednem mert nem birta memoriával:
   parseSentence(ggaMsgHEAD + ggaMsgUton + ggaMsgFix +  ggaMsgSat +  ggaMsgHdop + ggaMsgAlt1 + ggaMsgTAIL);//  + "62", 98);
   gpsSentenceCheck();
-  */
+  */  
+  
+ /* parseSentence("$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.7,M,,*66");
+  gpsSentenceCheck();
+  processStatus();*/
+  
   /* comment it out in real test until this line !!! */
 
   gpsSerial.begin(9600);
 }
 
-void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.7,M,,*66
+void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.7,M,,*66 //otthon
         ////Serial.print(".");
   char aChar;
   /* checking tracked GPS BEG */
@@ -177,6 +181,11 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
           if (parseSentence(String(inData))) {
             trackedSentenceCheck();
             processStatus();
+            if (serialDebug) {
+              Serial.print("  Processed! [");
+              Serial.print(String(inData));
+              Serial.println("] ");
+            }
           }
           /* parseSentence(String(inData));
           trackedSentenceCheck();
@@ -197,7 +206,10 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
       else if (!checkStar) {
         inCheck = inCheck ^ aChar;
       }
-
+      if (serialDebug) {
+        Serial.write(aChar);
+       // Serial.print(inCheck);
+      }
       inData[index] = aChar;
       // digitalWrite(BUZZER_PIN, (aChar % 2) == 0 ? HIGH : LOW ); 
       if (index < 83) { index++; }
@@ -205,7 +217,6 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
     }
   }
   /* checking tracked GPS END */
-
 
   digitalWrite(BUZZER_PIN, LOW);
 
@@ -222,9 +233,9 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
             gpsSentenceCheck();
             processStatus();
           }
-          /* parseSentence(String(inDataGps));
-          gpsSentenceCheck();
-          processStatus();*/
+          // parseSentence(String(inDataGps));
+          // gpsSentenceCheck();
+          // processStatus();
         }
       }
       indexGps = 1;
@@ -250,9 +261,12 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
   }
 
   /* Process status here!! */
-  processStatus();
+  //processStatus();
   /* Update display here! */
+ 
+  
   if (screenUpdateMillis + lastScreenUpdate < millis()) {
+    processStatus();
     displayStatusFont8x16();
     lastScreenUpdate = millis();
   }
@@ -337,6 +351,13 @@ boolean checkSentence(String ggaMsg, unsigned int checksum, boolean radioCheck) 
   else {
     if (radioCheck) {
       radioChkFail++;
+      if (serialDebug) {
+        Serial.println();
+        Serial.print("   Checksum: ");
+        Serial.println(checkIn);
+        Serial.print("   ");
+        Serial.println(ggaMsg);
+      }
     }
     else {
       gpsChkFail++;
@@ -369,7 +390,7 @@ boolean parseSentence(String ggaMsg) {
     if (tmpStr && tmpStr.endsWith("GGA")) {
       digitalWrite(LINK_PIN, HIGH);
       String tmpStr = ggaMsg.substring(commas[5] + 1, commas[6]);
-      if (tmpStr && tmpStr.charAt(0) == '1') {
+      if (tmpStr && ((tmpStr.charAt(0) - '0') >= 1) ) {
         msg_utc = ggaMsg.substring(commas[0] + 1, commas[1]).substring(0, 6);
 
         tmpStr = ggaMsg.substring(commas[1] + 1, commas[2]);
@@ -387,6 +408,8 @@ boolean parseSentence(String ggaMsg) {
         msg_sat = ggaMsg.substring(commas[6] + 1, commas[7]).toInt();
         msg_alt = round(ggaMsg.substring(commas[8] + 1, commas[9]).toFloat());
         result = true;
+      } else if (serialDebug) {
+        Serial.println(" --- Fix type failed!!!");
       }
     }
     else {
@@ -422,11 +445,26 @@ void processStatus() {
   if ((lastGPS + linkAlert) < millis()) {
     gpsRestart++;
     lastGPS = millis();
+    gpsSerial.flush();
     gpsSerial.begin(9600);
   }
   if (((lastLink + linkAlert) < millis()) && ((lastRadio + linkAlert) < millis())) {
+    if (serialDebug) {
+        Serial.println("radioRestart");
+        
+        Serial.print(" lastLink + linkAlert:");
+        Serial.print(lastLink + linkAlert);
+
+        Serial.print(" lastRadio + linkAlert:");
+        Serial.print(lastRadio + linkAlert);
+        
+        Serial.print(" millis(): ");
+        Serial.println( millis() );
+      }
+    
     radioRestart++;
     lastRadio = millis();
+    Serial.flush();
     Serial.begin(9600);
   }
 
@@ -488,7 +526,8 @@ void displayStatusFont8x16() {
     byte i;
     oled.set1X();
     oled.setCursor(0, 0);
-    if ((index < 2 || ((lastLink + linkAlert) < millis())) && homeSet) {
+    
+    if ((index < 2 && homeSet)) { //|| ((lastLink + linkAlert) < millis())) && homeSet) {
       oled.print(String(HOME_LAT, 6));
       oled.println("<HOME");
       oled.println(String(HOME_LON, 6));
@@ -590,6 +629,17 @@ void displayStatusFont8x16() {
 void trackedSentenceCheck() {
   lastLink = millis();
   lastRadio = millis();
+
+  /* if (serialDebug) {
+        Serial.println("trackedSentenceCheck()");
+ 
+        Serial.print(" lastLink set to:");
+        Serial.print(lastLink);
+
+        Serial.print(" lastRadio set to:");
+        Serial.println(lastRadio);
+      }*/
+  
   /* Here could be some validation and sanity check... */
   if (homeSet) {
     /* could be also checking with last coordinates... */
