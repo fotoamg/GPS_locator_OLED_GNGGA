@@ -13,7 +13,7 @@ const byte minSats = 7;
 const unsigned int maxValidDist = 8000;
 const unsigned int screenUpdateMillis = 1000;
 const unsigned int linkAlert = 8000;
-const boolean serialDebug = false;
+const boolean serialDebug = true;
 
 /*  config variables: */
 /* 2,3 should be left out for sofserial... when upgraded with home gps unit*/
@@ -64,6 +64,7 @@ unsigned int radioRestart = 0;
 unsigned int gpsRestart = 0;
 unsigned int radioChkFail = 0;
 unsigned int gpsChkFail = 0;
+String lastProcMsg = "";
 
 /* Button action */
 byte buttonPushCounter = 0;   // counter for the number of button presses
@@ -173,15 +174,41 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
     // az FPV sisakban is mivel ez egy dron nyomkövető rendszer
     // //Serial.println(" AVAIL! ");
     aChar = Serial.read();
+    if (serialDebug) {
+        Serial.write(aChar);
+       // Serial.print(inCheck);
+    }
     if (aChar == '$')
+    {
+      if (index >42) { // possibly recoverable data
+        String tempStr = String(inData);
+        if (tempStr.startsWith("$GNGGA,") || tempStr.startsWith("$GPGGA,")) {
+           if (serialDebug) {
+              Serial.println(" ");
+              Serial.println(" !!!!!!!!!! Possible recovarable data chunk: ");
+              Serial.println(tempStr);
+              Serial.println(" !!!!!! ");
+            }
+        }
+      }
+      index = 1;
+      inData[0] = aChar;
+      inData[index] = '\0';;
+      inCheck = 0;
+      checkStar = false;
+    } else if (aChar == '\n' || aChar == '\r' || aChar == ' ')
     {
       // End of record detected. Time to parse
       if (index > 50) {
-        if (checkSentence(String(inData), inCheck, true)) {
-          if (parseSentence(String(inData))) {
+        lastProcMsg = String(inData);
+        if (checkSentence(lastProcMsg, inCheck, true)) {
+          if (parseSentence(lastProcMsg)) {
             trackedSentenceCheck();
             processStatus();
+            displayLastRadioMsg();
+            
             if (serialDebug) {
+              Serial.println(" ");
               Serial.print("  Processed! [");
               Serial.print(String(inData));
               Serial.println("] ");
@@ -192,8 +219,7 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
           processStatus();*/
         }
       }
-      index = 1;
-      inData[0] = aChar;
+      index = 0;
       inData[index] = '\0';;
       inCheck = 0;
       checkStar = false;
@@ -206,10 +232,7 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
       else if (!checkStar) {
         inCheck = inCheck ^ aChar;
       }
-      if (serialDebug) {
-        Serial.write(aChar);
-       // Serial.print(inCheck);
-      }
+
       inData[index] = aChar;
       // digitalWrite(BUZZER_PIN, (aChar % 2) == 0 ? HIGH : LOW ); 
       if (index < 83) { index++; }
@@ -261,7 +284,7 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
   }
 
   /* Process status here!! */
-  //processStatus();
+  processStatus();
   /* Update display here! */
  
   
@@ -478,6 +501,7 @@ void processStatus() {
         buttonPushCounter++;
         oled.clear();
         if (buttonPushCounter > 3) buttonPushCounter = 0;
+        displayLastRadioMsg();
       }
       lastButtonState = buttonState;
     }
@@ -498,6 +522,27 @@ String bearingToHeading(int bear) {
 String alertStr() {
   long secs = millis() / 100;
   return (((lastLink + linkAlert) < millis()) && (secs % 3 == 1)) ? "!" : " ";
+}
+
+
+void displayLastRadioMsg() {
+  byte i;
+  if (buttonPushCounter == 2) {
+     // if(lastProcMsg.indexOf("GGA") > 0) {
+      oled.set1X();
+      oled.setCursor(0, 0);
+    
+        for (i = 0; i < 62; i++) {
+          if (i < lastProcMsg.length() && lastProcMsg.charAt(i) != '\n' && lastProcMsg.charAt(i) != '\r') {
+            oled.print(lastProcMsg.charAt(i));
+          }
+          else {
+            oled.print(" ");
+          }
+          if (i == 15 || i == 30 || i == 45) oled.println();
+        }
+     // }
+   }
 }
 
 void displayStatusFont8x16() {
@@ -523,7 +568,7 @@ void displayStatusFont8x16() {
     }
   }
   else if (buttonPushCounter == 2) {
-    byte i;
+   /* byte i;
     oled.set1X();
     oled.setCursor(0, 0);
     
@@ -548,7 +593,7 @@ void displayStatusFont8x16() {
         }
         if (i == 15 || i == 30 || i == 45) oled.println();
       }
-    }
+    }*/
   }
   else if (buttonPushCounter == 1) {
     oled.set1X();
