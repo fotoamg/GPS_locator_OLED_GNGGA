@@ -15,7 +15,7 @@ const byte minSats = 7;
 const unsigned int maxValidDist = 8000;
 const unsigned int screenUpdateMillis = 1000;
 const unsigned int linkAlert = 8000;
-const boolean serialDebug = true;
+const boolean serialDebug = false;
 
 /*  config variables: */
 /* 2,3 should be left out for sofserial... when upgraded with home gps unit*/
@@ -134,14 +134,12 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
     digitalWrite(BUZZER_PIN, HIGH);
     // buzzer hangjelzés csipog ahogy jönnek az adatok a cél tárgytól így hallani hogy van adat kapcsolat
     // az FPV sisakban is mivel ez egy dron nyomkövető rendszer
-    // //Serial.println(" AVAIL! ");
     aChar = Serial.read();
     if (serialDebug) {
         Serial.write(aChar);
        // Serial.print(inCheck);
     }
-    if (aChar == '$')
-    {
+    if (aChar == '$') {
      /* if (index >42) { // possibly recoverable data
         String tempStr = String(inData);
         if (tempStr.startsWith("$GNGGA,") || tempStr.startsWith("$GPGGA,")) {
@@ -199,9 +197,7 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
   while (gpsSerial.available() > 0)
   {
     aChar = gpsSerial.read();
-    //Serial.print(aChar);
-    if (aChar == '$')
-    {
+    if (aChar == '$') {
       indexGps = 1;
       inDataGps[0] = aChar;
       inDataGps[indexGps] = '\0';
@@ -229,7 +225,6 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
         gpsCheck = gpsCheck ^ aChar;
       }
 
-
       inDataGps[indexGps] = aChar;
       if (indexGps < 83) { indexGps++; }
       inDataGps[indexGps] = '\0'; // Keep the string NULL terminated
@@ -242,7 +237,6 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
  
   
   if (screenUpdateMillis + lastScreenUpdate < millis()) {
-    processStatus();
     displayStatusFont8x16();
     lastScreenUpdate = millis();
   }
@@ -469,7 +463,7 @@ boolean checkAndParseSentence(char msgBuffer[], unsigned int checksum, byte buff
                           Serial.println();
                           Serial.print("GGA lastProcMsg:");
                           Serial.println(lastProcMsg);
-                          Serial.print(" Inside checker GGA Free memory:");
+                          Serial.print(" Free memory:");
                           Serial.println(freeMemory());
                        }
                       trackedSentenceCheck(true);
@@ -674,51 +668,8 @@ void displayStatusFont8x16() {
   oled.setFont(ZevvPeep8x16);
   static char str[16];
   if (buttonPushCounter == 3) {
-   /* byte i;
-    oled.set1X();
-    oled.setCursor(0, 0);
-    if (indexGps < 2) {
-      oled.println("Empty GPS buff");
-    }
-    else {
-      for (i = 0; i < 62; i++) {
-        if (i < indexGps && inDataGps[i] != '\r' && inDataGps[i] != '\n') {
-          oled.print(inDataGps[i]);
-        }
-        else {
-          oled.print(" ");
-        }
-        if (i == 15 || i == 30 || i == 45) oled.println();
-      }
-    }*/
   }
   else if (buttonPushCounter == 2) {
-   /* byte i;
-    oled.set1X();
-    oled.setCursor(0, 0);
-    
-    if ((index < 2 && homeSet)) { //|| ((lastLink + linkAlert) < millis())) && homeSet) {
-      oled.print(String(HOME_LAT, 6));
-      oled.println("<HOME");
-      oled.println(String(HOME_LON, 6));
-      oled.print(String(last_valid_lat, 6));
-      oled.println("<DRONE");
-      oled.print(String(last_valid_lon, 6));
-      oled.print(" B");
-      oled.println(getBearing(HOME_LAT, HOME_LON, last_valid_lat, last_valid_lon));
-
-    }
-    else {
-      for (i = 0; i < 62; i++) {
-        if (i < index && inData[i] != '\n' && inData[i] != '\r') {
-          oled.print(inData[i]);
-        }
-        else {
-          oled.print(" ");
-        }
-        if (i == 15 || i == 30 || i == 45) oled.println();
-      }
-    }*/
   }
   else if (buttonPushCounter == 1) {
     oled.set1X();
@@ -786,26 +737,18 @@ void displayStatusFont8x16() {
       oled.print(":");
       oled.print(msg_utc[4]);
       oled.print(msg_utc[5]);
-     /* oled.print(msg_utc.substring(0, 2));
-      oled.print(":");
-      oled.print(msg_utc.substring(2, 4));
-      oled.print(":");
-      oled.print(msg_utc.substring(4, 6));*/
+
       oled.print(alertStr());
       sprintf(str, "A:%4dm", relative_alt);
       oled.println(str);
 
-      // sprintf(str, "%10ul$", millis() );
-      // oled.println(str);
-
-        if (serialDebug) {
+      if (serialDebug) {
                         Serial.print(" DISPLAY Free memory:");
                         Serial.println(freeMemory());
                      }   
       
     }
     else {
-      //Serial.println("  ----------- SCREEN NO HOME SET YET -------------");
       oled.clear();
       oled.println("   - NO HOME -");
       oled.println("   - SET YET -");
