@@ -8,6 +8,8 @@
 #define I2C_ADDRESS 0x3C
 SSD1306AsciiWire oled;
 
+#define SERIAL_RX_BUFFER_SIZE 256
+
 /*  setup tuning variables: */
 const byte minSats = 7;
 const unsigned int maxValidDist = 8000;
@@ -30,21 +32,6 @@ const char COMMA = ',';
 SoftwareSerial gpsSerial(SOFT_RX, SOFT_TX);
 
 /*  debug variables: */
-// setup-ban hívom ezekkel meg mivel a hw serialon nincs jelenleg GPS bekötve
-/*
-const String ggaMsgHEAD = "$GPGGA,212937.00,";
-const String ggaMsgOtthon    = "4614.70289,N,02007.73038,E"; // otthon
-const String ggaMsgMatyaster = "4614.42873,N,02008.12940,E"; // matyaster
-const String ggaMsgUton      = "4614.62873,N,02008.00040,E"; // valahol kozte
-const String ggaMsgFix = ",1,"; // 3D fix means 1
-const String ggaMsgSat = "09"; // nr of sats
-const String ggaMsgHdop = ",2.13,";
-const String ggaMsgAlt1 = "83.2,";
-const String ggaMsgAlt2 = "392.4,";
-const String ggaMsgTAIL = "M,37.7,M,,*";
-*/
-// alábbi teszt sorok felvannak fentebb darabolva hogy kevesebb memoria menjen el a stringre késöbb konkatenálom akkor
-// már nem fagy szét....
 //String ggaMsgExample2 = "$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*45";// Matyaster
 //String ggaMsgExample3 = "$GNGGA,130554.80,4614.52873,N,02007.71040,E,1,09,1.61,392.4,M,37.7,M,,*47";
 
@@ -52,6 +39,9 @@ const String ggaMsgTAIL = "M,37.7,M,,*";
 double HOME_LAT = 46.24505;
 double HOME_LON = 20.12884;
 int HOME_ALT = 83;
+unsigned int maxDist = 0;
+byte kph = 0;
+byte maxKph = 0;
 boolean homeSet = false;
 unsigned long homeSetMilllis = millis();
 unsigned long lastScreenUpdate = millis();
@@ -83,7 +73,7 @@ double msg_lat = 46.24505;
 double msg_lon = 20.12884;
 int msg_alt = 83;
 int msg_sat = 0;
-String msg_utc = "";
+char msg_utc[] = "120102";
 /* variables holding parsed message END */
 
 int relative_alt = 0;
@@ -97,13 +87,13 @@ byte gps_sat = 0;
 char inDataGps[85];
 byte indexGps = 0;
 unsigned int gpsCheck = 0;
-boolean gpsStar = false;
+byte gpsStar = 0;
 
 /* serial parsing buffer for radio link */
 char inData[85];
 byte index = 0;
 unsigned int inCheck = 0;
-boolean checkStar = false;
+byte checkStar = 0;
 
 
 void setup() {
@@ -132,34 +122,6 @@ void setup() {
   // oled.println("------------------");
 
   Serial.begin(9600);
-  // Serial.println("SETUP!!! ");
-
-  // az alábbiak élesben kikerülnek mert a HW serialon is lesz egy gps link, de most nem tudok 2 helyen lenni egyszerre így mockolom
-
-  /* test messages to mock radio GPS coords... */
-  // ezt a hívást kikellett szednem mert nem birta memoriával:
-/*
-  parseSentence(ggaMsgHEAD + ggaMsgOtthon + ggaMsgFix +  ggaMsgSat +  ggaMsgHdop + ggaMsgAlt1 + ggaMsgTAIL);// + "6A", 106);
-  trackedSentenceCheck();
-  processStatus();
-
-  parseSentence(ggaMsgHEAD + ggaMsgMatyaster + ggaMsgFix +  ggaMsgSat +  ggaMsgHdop + ggaMsgAlt2 + ggaMsgTAIL);//  + "5F", 95);
-  //parseSentence("$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*73");
-  trackedSentenceCheck();
-
-  processStatus();
-
-  // ezt a hívást kikellett szednem mert nem birta memoriával:
-  parseSentence(ggaMsgHEAD + ggaMsgUton + ggaMsgFix +  ggaMsgSat +  ggaMsgHdop + ggaMsgAlt1 + ggaMsgTAIL);//  + "62", 98);
-  gpsSentenceCheck();
-  */  
-  
- /* parseSentence("$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.7,M,,*66");
-  gpsSentenceCheck();
-  processStatus();*/
-  
-  /* comment it out in real test until this line !!! */
-
   gpsSerial.begin(9600);
 }
 
@@ -180,7 +142,7 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
     }
     if (aChar == '$')
     {
-      if (index >42) { // possibly recoverable data
+     /* if (index >42) { // possibly recoverable data
         String tempStr = String(inData);
         if (tempStr.startsWith("$GNGGA,") || tempStr.startsWith("$GPGGA,")) {
            if (serialDebug) {
@@ -190,44 +152,35 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
               Serial.println(" !!!!!! ");
             }
         }
-      }
+      }*/
       index = 1;
       inData[0] = aChar;
       inData[index] = '\0';;
       inCheck = 0;
-      checkStar = false;
-    } else if (aChar == '\n' || aChar == '\r' || aChar == ' ')
-    {
+      checkStar = 0;
+    } else if (aChar == '\n' || aChar == '\r' || aChar == ' ') {
       // End of record detected. Time to parse
       if (index > 50) {
-        lastProcMsg = String(inData);
-        if (checkSentence(lastProcMsg, inCheck, true)) {
-          if (parseSentence(lastProcMsg)) {
-            trackedSentenceCheck();
-            processStatus();
-            displayLastRadioMsg();
-            
+        inData[index] = '\0';
+        if (checkAndParseSentence(inData, inCheck, index, checkStar, true)) {
+            displayGpsMsg(lastProcMsg,2);
             if (serialDebug) {
               Serial.println(" ");
               Serial.print("  Processed! [");
               Serial.print(String(inData));
               Serial.println("] ");
             }
-          }
-          /* parseSentence(String(inData));
-          trackedSentenceCheck();
-          processStatus();*/
         }
       }
       index = 0;
-      inData[index] = '\0';;
+      inData[index] = '\0';
       inCheck = 0;
-      checkStar = false;
+      checkStar = 0;
     }
     else
     {
       if (aChar == '*') {
-        checkStar = true;
+        checkStar = index;
       }
       else if (!checkStar) {
         inCheck = inCheck ^ aChar;
@@ -249,28 +202,28 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
     //Serial.print(aChar);
     if (aChar == '$')
     {
-      // End of record detected. Time to parse
-      if (indexGps > 50) {
-        if (checkSentence(String(inDataGps), gpsCheck, false)) {
-          if (parseSentence(String(inDataGps))) {
-            gpsSentenceCheck();
-            processStatus();
-          }
-          // parseSentence(String(inDataGps));
-          // gpsSentenceCheck();
-          // processStatus();
-        }
-      }
       indexGps = 1;
       inDataGps[0] = aChar;
       inDataGps[indexGps] = '\0';
       gpsCheck = 0;
-      gpsStar = false;
+      gpsStar = 0;
+    } else if (aChar == '\n' || aChar == '\r' || aChar == ' ') {
+      // End of record detected. Time to parse
+      if (indexGps > 50) {
+        inDataGps[indexGps] = '\0';
+        if (checkAndParseSentence(inDataGps, gpsCheck, indexGps, gpsStar, false)) {
+          ;
+        }
+      }
+      indexGps = 0;
+      inDataGps[indexGps] = '\0';
+      gpsCheck = 0;
+      gpsStar = 0;   
     }
     else
     {
       if (aChar == '*') {
-        gpsStar = true;
+        gpsStar = indexGps;
       }
       else if (!gpsStar) {
         gpsCheck = gpsCheck ^ aChar;
@@ -295,6 +248,23 @@ void loop() { //$GPGGA,212937.00,4614.70289,N,02007.73038,E,1,05,2.13,83.2,M,37.
   }
 }
 
+#ifdef __arm__
+// should use uinstd.h to define sbrk but Due causes a conflict
+extern "C" char* sbrk(int incr);
+#else  // __ARM__
+extern char *__brkval;
+#endif  // __arm__
+ 
+int freeMemory() {
+  char top;
+#ifdef __arm__
+  return &top - reinterpret_cast<char*>(sbrk(0));
+#elif defined(CORE_TEENSY) || (ARDUINO > 103 && ARDUINO != 151)
+  return &top - __brkval;
+#else  // __arm__
+  return __brkval ? &top - __brkval : &top - __malloc_heap_start;
+#endif  // __arm__
+}
 
 /* Reading power supply voltage in uV */
 long readVcc() {
@@ -358,88 +328,238 @@ int getBearing(float lat, float lon, float lat2, float lon2) {
   return round(brng);
 }
 
-/* check GPS sentence for checksum and filter for GGA */
-boolean checkSentence(String ggaMsg, unsigned int checksum, boolean radioCheck) {
-  String checkIn = String(checksum, HEX);
-  checkIn.toUpperCase();
-  int starIndex = ggaMsg.indexOf('*');
-  String checkMsg = ggaMsg.substring(starIndex + 1);
-  boolean result = false;
-  if (checkMsg && checkMsg.length() > 2) checkMsg = checkMsg.substring(0, 2);
-  if (checkMsg && checkIn && checkMsg == checkIn) {
-    if (ggaMsg.startsWith("$GNGGA,") || ggaMsg.startsWith("$GPGGA,")) {
-      result = true;
-    }
-  }
-  else {
-    if (radioCheck) {
-      radioChkFail++;
-      if (serialDebug) {
-        Serial.println();
-        Serial.print("   Checksum: ");
-        Serial.println(checkIn);
-        Serial.print("   ");
-        Serial.println(ggaMsg);
+void parseLat(String latMsg, char sphere) {
+  msg_lat = latMsg.substring(0, 2).toDouble();
+  msg_lat += (latMsg.substring(2).toDouble() / 60.0);
+      if (sphere == 'S') {
+        msg_lat = msg_lat * -1.0;
       }
-    }
-    else {
-      gpsChkFail++;
-    }
-  }
-  return result;
 }
 
-/* Parsing of GGA messages into global variables,
-TODO v2: coordinate and alt sanitation!!!
-return false if no fix data so not doing anything at all*/
-boolean parseSentence(String ggaMsg) {
+void parseLon(String lonMsg, char sphere) {
+  if(lonMsg.charAt(0) == '0') {
+    msg_lon = lonMsg.substring(1, 3).toDouble();
+  } else {
+    msg_lon = lonMsg.substring(0, 3).toDouble();
+  }
+  msg_lon += (lonMsg.substring(3).toDouble() / 60.0);
+  if (sphere == 'W') {
+    msg_lon = msg_lon * -1.0;
+  }
+}
+
+boolean checkAndParseSentence(char msgBuffer[], unsigned int checksum, byte bufferSize, byte checkSumIdx, boolean radioCheck) {
+  char chr;
   boolean result = false;
-  String tmpStr = "";
+  boolean checksumOk = false;
+  boolean ggaMsg = true;
+  boolean rmcMsg = true;
   byte idx = 0;
   byte countr = 0;
   byte commas[10];
-
+  
   //"$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*73";
 
-  for (idx = 0; (idx < ggaMsg.length()) && (countr < 10); idx++) {
-    if (ggaMsg.charAt(idx) == COMMA) {
-      commas[countr] = idx;
-      countr++;
-    }
-  }
+  if (bufferSize < checkSumIdx +2 ) { // checksum start found and buffer size enough for checksum
+      checksumOk = false;
+      result = false;
+      /* if (serialDebug) {
+        Serial.println();
+        Serial.print(" Failed Checksum and buffer size! ");
+        Serial.print(" chkIdx:");
+        Serial.println(checkSumIdx);
+        Serial.print(" chkIdx:");
+        Serial.println(checkSumIdx);
+        Serial.print(" buffersize:");
+        Serial.println(bufferSize);
+      }*/
+   } else {
 
-  if (countr == 10) {
-    tmpStr = ggaMsg.substring(0, commas[0]);
-    if (tmpStr && tmpStr.endsWith("GGA")) {
-      digitalWrite(LINK_PIN, HIGH);
-      String tmpStr = ggaMsg.substring(commas[5] + 1, commas[6]);
-      if (tmpStr && ((tmpStr.charAt(0) - '0') >= 1) ) {
-        msg_utc = ggaMsg.substring(commas[0] + 1, commas[1]).substring(0, 6);
-
-        tmpStr = ggaMsg.substring(commas[1] + 1, commas[2]);
-        msg_lat = tmpStr.substring(0, 2).toDouble() + (tmpStr.substring(2).toDouble() / 60.0);
-        if (ggaMsg.substring(commas[2] + 1, commas[3]) == "S") {
-          msg_lat = msg_lat * -1.0;
-        }
-
-        tmpStr = ggaMsg.substring(commas[3] + 1, commas[4]);
-        msg_lon = tmpStr.substring(0, 3).toDouble() + (tmpStr.substring(3).toDouble() / 60.0);
-        if (ggaMsg.substring(commas[4] + 1, commas[5]) == "W") {
-          msg_lon = msg_lon * -1.0;
-        }
-
-        msg_sat = ggaMsg.substring(commas[6] + 1, commas[7]).toInt();
-        msg_alt = round(ggaMsg.substring(commas[8] + 1, commas[9]).toFloat());
-        result = true;
-      } else if (serialDebug) {
-        Serial.println(" --- Fix type failed!!!");
+      unsigned int chkIn = (msgBuffer[checkSumIdx+1] - '0') *16;
+      unsigned int tmpInt = (msgBuffer[checkSumIdx+2] - '0');
+      if (tmpInt < 10) {
+        chkIn+= tmpInt;
+      } else {
+        chkIn+= (tmpInt - 7);
       }
-    }
-    else {
-      //Serial.println("No GGA header ending! ");
-    }
-  }
 
+      
+      if ( (msgBuffer[checkSumIdx] == '*') && (msgBuffer[0] == '$')
+           && (chkIn == checksum) ) {
+        checksumOk = true;  // Checksum check passed
+         /* if (serialDebug) {
+            Serial.println();
+            Serial.print(" Checksum check passed! ");
+            Serial.print(chkIn);
+            Serial.print(" chkIdx:");
+            Serial.println(checkSumIdx);
+          }*/
+        for (idx = 0; (idx < checkSumIdx) && (countr < 10); idx++) {
+          // process char by char here!!!
+          chr = msgBuffer[idx];
+          if (chr == COMMA) {
+              commas[countr] = idx; // saving each comma's position in the buffer
+              countr++;
+          } else if (countr == 0 && idx == 1 && chr != 'G' ) {
+               ggaMsg = false;
+               rmcMsg = false;
+          } else if (countr == 0 && idx == 3 && (ggaMsg || rmcMsg) ) {
+             if (chr != 'G' ) {
+                ggaMsg = false;
+             }
+             if (chr != 'R' ) {
+                rmcMsg = false;
+             }
+          } else if (countr == 0 && idx == 4 && (ggaMsg || rmcMsg) ) {
+             if (chr != 'G' ) {
+                ggaMsg = false;
+             }
+             if (chr != 'M' ) {
+                rmcMsg = false;
+             }
+            
+          } else if (countr == 0 && idx == 5 && (ggaMsg || rmcMsg) ) {
+             if (chr != 'A' ) {
+                ggaMsg = false;
+             }
+             if (chr != 'C' ) {
+                rmcMsg = false;
+             }
+            
+          } else if (countr == 1 && (ggaMsg || rmcMsg) && idx < 13 ) { // UTC timestamp part
+               msg_utc[idx-commas[0]-1] = chr;
+           
+          }
+          
+        } // end for   
+
+         //return true;
+        String tmpStr;
+         
+        /* JUST for DEBUG END  */
+        if (ggaMsg) { // GGA message header
+                  /*if (serialDebug) {
+                    Serial.println();
+                    Serial.println(" GGA!! ");               
+                  }*/
+                
+                  digitalWrite(LINK_PIN, HIGH);
+                  if ((msgBuffer[commas[5]+1] - '0') >= 1) { // 3D fix or better precision
+                    /* if (serialDebug) {
+                      Serial.println();
+                      Serial.println(" 3D fix+  ");               
+                    } */
+                    
+                  
+                  String lastMsg = String(msgBuffer);
+
+                  /*if (serialDebug) {
+                      Serial.print(" GGA LastMsg:");
+                      Serial.println(lastMsg);
+                    } */
+
+                  parseLat(lastMsg.substring(commas[1] + 1, commas[2]), msgBuffer[commas[2]+1]);
+                  parseLon(lastMsg.substring(commas[3] + 1, commas[4]), msgBuffer[commas[4]+1]);
+          
+                  msg_sat = lastMsg.substring(commas[6] + 1, commas[7]).toInt();
+                  msg_alt = round(lastMsg.substring(commas[8] + 1, commas[9]).toFloat());
+                  if (radioCheck) {
+                      lastProcMsg = lastMsg;
+                       if (serialDebug) {
+                          Serial.println();
+                          Serial.print("GGA lastProcMsg:");
+                          Serial.println(lastProcMsg);
+                          Serial.print(" Inside checker GGA Free memory:");
+                          Serial.println(freeMemory());
+                       }
+                      trackedSentenceCheck(true);
+                      processStatus();
+                    } else {
+                      displayGpsMsg(lastMsg, 3);
+                      gpsSentenceCheck(true);
+                      processStatus();
+                    }
+                  result = true;
+                }
+              } else if (rmcMsg) { // RMC message header
+                 /* if (serialDebug) {
+                    Serial.println();
+                    Serial.println(" RMC!! ");               
+                  }*/
+                  digitalWrite(LINK_PIN, HIGH);
+
+                  if (msgBuffer[commas[1]+1] == 'A') { // Active status
+     
+                   /*  if (serialDebug) {
+                      Serial.println();
+                      Serial.println(" RMC Active status  ");               
+                     } */
+                    
+                    String lastMsg = String(msgBuffer);
+
+
+                  /* if (serialDebug) {
+                      Serial.print(" RMC LastMsg:");
+                      Serial.println(lastMsg);
+                    } */
+
+                    parseLat(lastMsg.substring(commas[2] + 1, commas[3]), msgBuffer[commas[3]+1]);
+                    parseLon(lastMsg.substring(commas[4] + 1, commas[5]), msgBuffer[commas[5]+1]);
+            
+                    if (radioCheck) {
+                        kph = round(lastMsg.substring(commas[6] + 1, commas[7]).toFloat() * 1.85);
+                        if (kph > maxKph) { maxKph = kph; }
+                    }
+                    if (radioCheck) {
+                      lastProcMsg = lastMsg;
+                       if (serialDebug) {
+                          Serial.println();
+                          Serial.print("RMC lastProcMsg:");
+                          Serial.println(lastProcMsg);
+                          Serial.print(" Inside checker RMC Free memory:");
+                          Serial.println(freeMemory());
+                       }
+                      trackedSentenceCheck(false);
+                      processStatus();
+                    } else {
+                      gpsSentenceCheck(false);
+                      processStatus();
+                    }
+                    result = true;
+                 }
+                             
+              } else {
+                //Serial.println("No RMC or GGA header ending! ");
+              }
+     
+        
+      } else { // checksum failed
+         if (radioCheck) {
+             radioChkFail++;
+          } else {
+             gpsChkFail++;
+          }
+         /*if (serialDebug) {
+            Serial.println();
+            Serial.print(" Failed Checksum! Free memory:");
+            Serial.print(freeMemory());
+            Serial.print(" checksum:[");
+            Serial.print(chkIn);
+            Serial.print("] checksum decimal: ");
+            Serial.println(checksum);
+            Serial.print(" chkIdx:");
+            Serial.println(checkSumIdx);
+            Serial.print(msgBuffer[0]);
+            Serial.print("...");
+            Serial.print(msgBuffer[checkSumIdx]);
+            Serial.print(msgBuffer[checkSumIdx+1]);
+            Serial.print(msgBuffer[checkSumIdx+2]);
+            Serial.println(" ");
+          }*/
+          
+      }
+
+  }
   return result;
 }
 
@@ -447,7 +567,6 @@ void processStatus() {
   if (homeSet) {
     /* process HOME LED and buzzer sound */
     if ((lastLink + linkAlert) < millis()) {
-      
       digitalWrite(LINK_PIN, LOW);
     }
   }
@@ -472,7 +591,7 @@ void processStatus() {
     gpsSerial.begin(9600);
   }
   if (((lastLink + linkAlert) < millis()) && ((lastRadio + linkAlert) < millis())) {
-    if (serialDebug) {
+   /* if (serialDebug) {
         Serial.println("radioRestart");
         
         Serial.print(" lastLink + linkAlert:");
@@ -483,7 +602,7 @@ void processStatus() {
         
         Serial.print(" millis(): ");
         Serial.println( millis() );
-      }
+      }*/
     
     radioRestart++;
     lastRadio = millis();
@@ -501,7 +620,7 @@ void processStatus() {
         buttonPushCounter++;
         oled.clear();
         if (buttonPushCounter > 3) buttonPushCounter = 0;
-        displayLastRadioMsg();
+        displayGpsMsg(lastProcMsg,2);
       }
       lastButtonState = buttonState;
     }
@@ -524,17 +643,15 @@ String alertStr() {
   return (((lastLink + linkAlert) < millis()) && (secs % 3 == 1)) ? "!" : " ";
 }
 
-
-void displayLastRadioMsg() {
+void displayGpsMsg(String gpsMsg, byte panel) {
   byte i;
-  if (buttonPushCounter == 2) {
-     // if(lastProcMsg.indexOf("GGA") > 0) {
+  if (buttonPushCounter == panel) {
       oled.set1X();
       oled.setCursor(0, 0);
     
         for (i = 0; i < 62; i++) {
-          if (i < lastProcMsg.length() && lastProcMsg.charAt(i) != '\n' && lastProcMsg.charAt(i) != '\r') {
-            oled.print(lastProcMsg.charAt(i));
+          if (i < gpsMsg.length() && gpsMsg.charAt(i) != '\n' && gpsMsg.charAt(i) != '\r') {
+            oled.print(gpsMsg.charAt(i));
           }
           else {
             oled.print(" ");
@@ -546,10 +663,18 @@ void displayLastRadioMsg() {
 }
 
 void displayStatusFont8x16() {
+  int distance = 0;
+  if (homeSet) {
+      relative_alt = last_valid_alt - HOME_ALT;
+      distance = round(calc_dist(gps_lat, gps_lon, last_valid_lat, last_valid_lon));
+      if (distance > maxDist) {
+        maxDist = distance;
+      }
+  }
   oled.setFont(ZevvPeep8x16);
   static char str[16];
   if (buttonPushCounter == 3) {
-    byte i;
+   /* byte i;
     oled.set1X();
     oled.setCursor(0, 0);
     if (indexGps < 2) {
@@ -565,7 +690,7 @@ void displayStatusFont8x16() {
         }
         if (i == 15 || i == 30 || i == 45) oled.println();
       }
-    }
+    }*/
   }
   else if (buttonPushCounter == 2) {
    /* byte i;
@@ -615,15 +740,17 @@ void displayStatusFont8x16() {
     oled.print(gpsChkFail, DEC);
     oled.print(" i:");
     oled.println(indexGps, DEC);
-    oled.println(millis(), DEC);
+    oled.print(millis(), DEC);
+    oled.print(" MD:");
+    oled.println(maxDist, DEC);
   }
   else {
     if (homeSet) {
-      relative_alt = last_valid_alt - HOME_ALT;
-      int distance = round(calc_dist(gps_lat, gps_lon, last_valid_lat, last_valid_lon));
       /*int range = relative_alt + distance;*/
-      int bear = getBearing(HOME_LAT, HOME_LON, last_valid_lat, last_valid_lon);
+      //int bear = getBearing(HOME_LAT, HOME_LON, last_valid_lat, last_valid_lon);
       int gpsBear = getBearing(gps_lat, gps_lon, last_valid_lat, last_valid_lon);
+      //int gpsBear = 111;
+      
       //  oled.clear();
       oled.set1X();
       oled.setCursor(0, 0);
@@ -634,8 +761,10 @@ void displayStatusFont8x16() {
 
       if (last_valid_lon > 0.0) oled.print(SPC);
       oled.print(String(last_valid_lon, 6));
-      oled.print(" B:");
-      sprintf(str, "%3d", bear);
+      //oled.print(" B:");
+      oled.print(" V:");
+      sprintf(str, "%3d", maxKph);
+      //sprintf(str, "%3d", bear);
       oled.println(str);
 
       //oled.print(" ");
@@ -648,17 +777,32 @@ void displayStatusFont8x16() {
       sprintf(str, "%3d", gpsBear);
       oled.println(str);
 
-      oled.print(msg_utc.substring(0, 2));
+
+      oled.print(msg_utc[0]);
+      oled.print(msg_utc[1]);
+      oled.print(":");
+      oled.print(msg_utc[2]);
+      oled.print(msg_utc[3]);
+      oled.print(":");
+      oled.print(msg_utc[4]);
+      oled.print(msg_utc[5]);
+     /* oled.print(msg_utc.substring(0, 2));
       oled.print(":");
       oled.print(msg_utc.substring(2, 4));
       oled.print(":");
-      oled.print(msg_utc.substring(4, 6));
+      oled.print(msg_utc.substring(4, 6));*/
       oled.print(alertStr());
       sprintf(str, "A:%4dm", relative_alt);
       oled.println(str);
 
       // sprintf(str, "%10ul$", millis() );
       // oled.println(str);
+
+        if (serialDebug) {
+                        Serial.print(" DISPLAY Free memory:");
+                        Serial.println(freeMemory());
+                     }   
+      
     }
     else {
       //Serial.println("  ----------- SCREEN NO HOME SET YET -------------");
@@ -671,16 +815,14 @@ void displayStatusFont8x16() {
   }
 }
 
-void trackedSentenceCheck() {
+void trackedSentenceCheck(boolean gga) {
   lastLink = millis();
   lastRadio = millis();
 
   /* if (serialDebug) {
         Serial.println("trackedSentenceCheck()");
- 
         Serial.print(" lastLink set to:");
         Serial.print(lastLink);
-
         Serial.print(" lastRadio set to:");
         Serial.println(lastRadio);
       }*/
@@ -691,8 +833,10 @@ void trackedSentenceCheck() {
     if (calc_dist(msg_lat, msg_lon, HOME_LAT, HOME_LON) < maxValidDist) {
       last_valid_lat = msg_lat;
       last_valid_lon = msg_lon;
-      last_valid_alt = msg_alt;
-      last_radio_sat = msg_sat;
+      if (gga) {
+                last_valid_alt = msg_alt;
+                last_radio_sat = msg_sat;
+      }
     }
     else {
       // //Serial.println("  --- SANITY max DIST FAIL -----");       countert   
@@ -701,15 +845,17 @@ void trackedSentenceCheck() {
   else {
     last_valid_lat = msg_lat;
     last_valid_lon = msg_lon;
-    last_valid_alt = msg_alt;
-    last_radio_sat = msg_sat;
+    if (gga) {
+                last_valid_alt = msg_alt;
+                last_radio_sat = msg_sat;
+             }
   }
 }
 
 
-void gpsSentenceCheck() {
+void gpsSentenceCheck(boolean gga) {
   lastGPS = millis();
   gps_lat = msg_lat;
   gps_lon = msg_lon;
-  gps_sat = msg_sat;
+  if (gga) gps_sat = msg_sat;
 }
