@@ -12,7 +12,7 @@ SSD1306AsciiWire oled;
 
 /*  setup tuning variables: */
 const byte minSats = 7;
-const unsigned int maxValidDist = 8000;
+const unsigned int maxValidDist = 2000; /* 2km max between each GPS coordinates received for sanitization TODO: tune it to radio capabilities etc. */
 const unsigned int screenUpdateMillis = 1000;
 const unsigned int linkAlert = 8000;
 const boolean serialDebug = false;
@@ -39,6 +39,8 @@ SoftwareSerial gpsSerial(SOFT_RX, SOFT_TX);
 double HOME_LAT = 46.24505;
 double HOME_LON = 20.12884;
 int HOME_ALT = 83;
+int maxAlt = 0;
+unsigned int distance = 0;
 unsigned int maxDist = 0;
 byte kph = 0;
 byte maxKph = 0;
@@ -48,6 +50,7 @@ unsigned long lastScreenUpdate = millis();
 unsigned long lastLink = millis();
 unsigned long lastRadio = millis();
 unsigned long lastGPS = millis();
+
 
 /* stat counters*/
 unsigned int radioRestart = 0;
@@ -271,8 +274,6 @@ float calc_dist(float flat1, float flon1, float flat2, float flon2)
   diflat = radians(flat2 - flat1);
   float lat1Rad = radians(flat1);
   float lat2Rad = radians(flat2);
-  //flat1 = radians(flat1);
-  //flat2 = radians(flat2);
   diflon = radians((flon2)-(flon1));
 
   dist_calc = (sin(diflat / 2.0)*sin(diflat / 2.0));
@@ -286,7 +287,7 @@ float calc_dist(float flat1, float flon1, float flat2, float flon2)
 
   dist_calc *= 6371000.0; //Converting to meters
               ////Serial.println(dist_calc);
-  return dist_calc;
+  return abs(dist_calc);
 }
 
 /* Return bearing in degrees for 2 coordinapes */
@@ -333,7 +334,6 @@ boolean checkAndParseSentence(char msgBuffer[], unsigned int checksum, byte buff
   byte idx = 0;
   byte countr = 0;
   byte commas[10];
-  
   //"$GNGGA,130554.80,4614.42873,N,02008.12940,E,1,09,1.61,392.4,M,37.7,M,,*73";
 
   if (bufferSize < checkSumIdx +2 ) { // checksum start found and buffer size enough for checksum
@@ -409,7 +409,7 @@ boolean checkAndParseSentence(char msgBuffer[], unsigned int checksum, byte buff
                     processStatus();
                   }
                 result = true;
-            }
+            } //else if (!radioCheck) {displayGpsMsg("LOW sats on Local GPS!", 3);}
         } else if (rmcMsg) { // RMC message header
             digitalWrite(LINK_PIN, HIGH);
             if (msgBuffer[commas[1]+1] == 'A') { // Active status
@@ -534,14 +534,6 @@ void displayGpsMsg(String gpsMsg, byte panel) {
 }
 
 void displayStatusFont8x16() {
-  int distance = 0;
-  if (homeSet) {
-      relative_alt = last_valid_alt - HOME_ALT;
-      distance = round(calc_dist(gps_lat, gps_lon, last_valid_lat, last_valid_lon));
-      if (distance > maxDist) {
-        maxDist = distance;
-      }
-  }
   oled.setFont(ZevvPeep8x16);
   static char str[16];
   if (buttonPushCounter == 3) {
@@ -568,9 +560,18 @@ void displayStatusFont8x16() {
     oled.print(gpsChkFail, DEC);
     oled.print(" i:");
     oled.println(indexGps, DEC);
-    oled.print(millis(), DEC);
-    oled.print(" MD:");
-    oled.println(maxDist, DEC);
+
+    sprintf(str, "A%4d D%04u", maxAlt, maxDist);
+    oled.print(str);
+    
+    /*oled.print("A");
+    oled.print(maxAlt, DEC);
+    oled.print(" D");
+    oled.print(maxDist, DEC);*/
+
+    sprintf(str, " %3u",(millis()-lastScreenUpdate-screenUpdateMillis));
+    oled.print(str);
+
   }
   else {
     if (homeSet) {
@@ -590,14 +591,14 @@ void displayStatusFont8x16() {
       if (last_valid_lon > 0.0) oled.print(SPC);
       oled.print(String(last_valid_lon, 6));
       //oled.print(" B:");
-      oled.print(" V:");
+      oled.print(" VM");
       sprintf(str, "%3d", maxKph);
       //sprintf(str, "%3d", bear);
       oled.println(str);
 
       //oled.print(" ");
       //oled.print(alertStr());
-      sprintf(str, "D:%5dm", distance);
+      sprintf(str, "D:%5um", distance);
       oled.print(str);
       oled.print(bearingToHeading(gpsBear));
       oled.print(SPC);
@@ -632,22 +633,38 @@ void displayStatusFont8x16() {
 void trackedSentenceCheck(boolean gga) {
   lastLink = millis();
   lastRadio = millis();
-  /* Here could be some validation and sanity check... */
+    
   if (homeSet) {
+    /* Here could be some validation and sanity check... */
     /* could be also checking with last coordinates... */
-    if (calc_dist(msg_lat, msg_lon, HOME_LAT, HOME_LON) < maxValidDist) {
+    //if (calc_dist(msg_lat, msg_lon, HOME_LAT, HOME_LON) < maxValidDist) {
+     if (round(calc_dist(msg_lat, msg_lon, last_valid_lat, last_valid_lon)) < maxValidDist) {
       last_valid_lat = msg_lat;
       last_valid_lon = msg_lon;
       if (gga) {
                 last_valid_alt = msg_alt;
                 last_radio_sat = msg_sat;
       }
+
+      relative_alt = last_valid_alt - HOME_ALT;
+      if (relative_alt > maxAlt) {
+        maxAlt = relative_alt;
+      }
+
+      if (distance > 0) { /* Local GPS already calculated this */
+          distance = round(calc_dist(gps_lat, gps_lon, last_valid_lat, last_valid_lon));
+      }
+      
+      if (distance > maxDist && gps_sat > 4 ) { // check if local GPS had enough sats and updated not initial coordinates
+          maxDist = distance;
+      }
+      
     }
     else {
      //Serial.println("  --- SANITY max DIST FAIL -----");    //  TODO add counter
     }
   }
-  else {
+  else { // no Home set no sanity just updating coordinates 
     last_valid_lat = msg_lat;
     last_valid_lon = msg_lon;
     if (gga) {
@@ -662,5 +679,10 @@ void gpsSentenceCheck(boolean gga) {
   lastGPS = millis();
   gps_lat = msg_lat;
   gps_lon = msg_lon;
+
+  if (homeSet) {
+     distance = round(calc_dist(gps_lat, gps_lon, last_valid_lat, last_valid_lon));
+  }
+
   if (gga) gps_sat = msg_sat;
 }
