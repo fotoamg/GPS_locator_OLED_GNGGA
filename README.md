@@ -34,26 +34,31 @@ When drone crashed to the ground radio connection is lost, the device helps user
 * HW: removable antenna connector
 * SW: connect local GPS RX pin too and use that module for navigation calculation and parsing GNxRMB messages too
 
-## Pictures of prototype module
+# Pictures of prototype module
 
-Front view main screen displaying main info:
+## Front view main screen displaying main info:
 * latitude, S:[number of satellites from drone remote unit]
 * longitude, VM [vertical speed max in kmph]
 * D: distance from tracker unit,  bearing fromk here in short text and compass degrees (this line is enough for locating drone with an external compass)
 * UTC time from GPS (any unit last package), A: relative altitude from home
+
 ![Image of Screen](images/proto1front1.jpg) 
 
-Rear view of protoype unit
+
+## Rear view of protoype unit
 ![Image of Screen](images/proto1back1.jpg) 
 
-Front view message debug screen displaying last processed sentence of GPS
+
+## Front view message debug screen displaying last processed sentence of GPS
 ![Image of Screen](images/proto1front2.jpg) 
 
-Front view debug screen for counters displaying info:
+
+## Front view debug screen for counters displaying info:
 * [battery voltage]V, S:[]numer of Sat from radio/[number of Sat from local gps]
 * RR:remote radio(drone) serial port number of reconnects, C: number of CRC errors,  i:currend serial buffer size
 * GR:loval GPS serial port number of reconnects, C: number of CRC errors,  i:currend serial buffer size
 * A [maximum altitude], D[maximum distance in meters], millis taken to render current screen
+
 ![Image of Screen](images/proto1front3.jpg) 
 
 
