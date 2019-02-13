@@ -24,14 +24,14 @@ When drone crashed to the ground radio connection is lost, the device helps user
 * displaying NMEA packages
 * buzzer sound beeps for radio serial communication so connection issues/out of range can be heard even wearing FPV glasses by sound
 * push button to change screen
-* BN-220 GNSS unit used configured for Glonass, Galileo satellites too
+* BN-220 GNSS unit used configured for SBAS, GPS, Glonass, Galileo satellites too
 * currently not using navigation calculation from the local GPS and microcontroller/sw calculates geographic data
 
 ## TODO
 
 * HW: lost of LED outputs used for connection statuses etc. with not connected hardware devices
 * SW: get rid of remaining String objects
-* HW: removable antenna connector
+* HW: removable antenna connector (or exchangable radio unit connector)
 * SW: connect local GPS RX pin too and use that module for navigation calculation and parsing GNxRMB messages too
 
 # Pictures of prototype module
@@ -54,10 +54,10 @@ When drone crashed to the ground radio connection is lost, the device helps user
 
 
 ## Front view debug screen for counters displaying info:
-* [battery voltage]V, S:[]numer of Sat from radio/[number of Sat from local gps]
-* RR:remote radio(drone) serial port number of reconnects, C: number of CRC errors,  i:currend serial buffer size
-* GR:loval GPS serial port number of reconnects, C: number of CRC errors,  i:currend serial buffer size
-* A [maximum altitude], D[maximum distance in meters], millis taken to render current screen
+* [battery voltage]V, S:[numer of Sat from radio]/[number of Sat from local gps]
+* RR:[remote radio(drone) serial port number of reconnects], C: [number of CRC errors],  i:[currend serial buffer size]
+* GR:[loval GPS serial port number of reconnects], C: [number of CRC errors],  i:[currend serial buffer size]
+* A [maximum altitude], D[maximum distance in meters], [millis taken to render current screen]
 
 ![Image of Screen](images/proto1front3.jpg) 
 
